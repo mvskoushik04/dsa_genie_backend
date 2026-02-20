@@ -85,52 +85,7 @@ async function groqComplete(systemPrompt, userPrompt) {
 }
 
 
-// Always fetch from the specified playlist
-const PLAYLIST_ID = 'PLlTrva6OzZKThknv28Xx9UTCMYkrL23JQ';
-const PLAYLIST_API_URL = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${PLAYLIST_ID}`;
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Only needed for playlist fetch
-
-async function getPlaylistVideos(pageToken = null) {
-  if (!YOUTUBE_API_KEY) throw new Error('YOUTUBE_API_KEY required for playlist fetch');
-  let url = PLAYLIST_API_URL + `&key=${YOUTUBE_API_KEY}`;
-  if (pageToken) url += `&pageToken=${pageToken}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to fetch playlist');
-  return await res.json();
-}
-
-async function findVideoIdInPlaylist(problemSlug, title) {
-  // Try to find a video in the playlist whose title matches the problem title or slug
-  let pageToken = null;
-  let bestMatch = null;
-  let bestScore = 0;
-  const normalized = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const target = normalized(title) || normalized(problemSlug);
-  do {
-    const data = await getPlaylistVideos(pageToken);
-    for (const item of data.items || []) {
-      const videoTitle = item.snippet?.title || '';
-      const videoId = item.snippet?.resourceId?.videoId;
-      const nTitle = normalized(videoTitle);
-      // Score: exact match > contains > partial
-      let score = 0;
-      if (nTitle === target) score = 3;
-      else if (nTitle.includes(target)) score = 2;
-      else if (target && nTitle && (target.split('').filter(c => nTitle.includes(c)).length > target.length * 0.7)) score = 1;
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = videoId;
-      }
-    }
-    pageToken = data.nextPageToken;
-  } while (pageToken && bestScore < 3);
-  return bestMatch;
-}
-
-function getYoutubeSearchUrl(problemSlug, title) {
-  // Fallback: open playlist
-  return `https://www.youtube.com/playlist?list=${PLAYLIST_ID}`;
-}
+// YouTube-related playlist/search helpers removed
 
 function parseProblemFromUrl(url) {
   if (!url || !url.includes('leetcode.com/problems/')) return null;
@@ -186,26 +141,7 @@ app.post('/api/code', async (req, res) => {
   }
 });
 
-// POST /api/youtube — returns search URL and, if YOUTUBE_API_KEY set, first video ID for embed
-app.post('/api/youtube', async (req, res) => {
-  try {
-    const { problemSlug, title } = getPayload(req);
-    let videoId = null;
-    if (YOUTUBE_API_KEY) {
-      videoId = await findVideoIdInPlaylist(problemSlug, title);
-    }
-    const searchUrl = getYoutubeSearchUrl(problemSlug, title);
-    res.json({
-      success: true,
-      data: {
-        url: searchUrl,
-        videoId: videoId || null
-      }
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
+// YouTube API endpoint removed
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
