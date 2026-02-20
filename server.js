@@ -84,10 +84,26 @@ async function groqComplete(systemPrompt, userPrompt) {
   return text;
 }
 
-// YouTube: return search URL (no API key)
+// YouTube: return search URL; if YOUTUBE_API_KEY set, also fetch first video ID for embed
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
 function getYoutubeSearchUrl(problemSlug, title) {
   const q = encodeURIComponent(`LeetCode ${problemSlug} ${(title || '').trim()}`);
   return `https://www.youtube.com/results?search_query=${q}`;
+}
+
+async function getFirstYoutubeVideoId(problemSlug, title) {
+  if (!YOUTUBE_API_KEY) return null;
+  const q = encodeURIComponent(`LeetCode ${problemSlug} ${(title || '').trim()}`);
+  const url = `https://www.googleapis.com/youtube/v3/search?part=id&type=video&maxResults=1&q=${q}&key=${YOUTUBE_API_KEY}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const videoId = data?.items?.[0]?.id?.videoId;
+    return videoId || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function parseProblemFromUrl(url) {
@@ -144,12 +160,13 @@ app.post('/api/code', async (req, res) => {
   }
 });
 
-// POST /api/youtube
-app.post('/api/youtube', (req, res) => {
+// POST /api/youtube — returns search URL and, if YOUTUBE_API_KEY set, first video ID for embed
+app.post('/api/youtube', async (req, res) => {
   try {
     const { problemSlug, title } = getPayload(req);
     const searchUrl = getYoutubeSearchUrl(problemSlug, title);
-    res.json({ success: true, data: { url: searchUrl } });
+    const videoId = await getFirstYoutubeVideoId(problemSlug, title);
+    res.json({ success: true, data: { url: searchUrl, videoId: videoId || undefined } });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
