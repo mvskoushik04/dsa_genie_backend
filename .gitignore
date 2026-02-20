@@ -1,0 +1,11 @@
+# Backend
+node_modules/
+.env
+.env.example
+
+
+# General
+dist/
+.env
+.env.local
+*.log
