@@ -166,7 +166,13 @@ app.post('/api/youtube', async (req, res) => {
     const { problemSlug, title } = getPayload(req);
     const searchUrl = getYoutubeSearchUrl(problemSlug, title);
     const videoId = await getFirstYoutubeVideoId(problemSlug, title);
-    res.json({ success: true, data: { url: searchUrl, videoId: videoId || undefined } });
+    res.json({
+      success: true,
+      data: {
+        url: searchUrl,
+        videoId: videoId || null
+      }
+    });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
