@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const PLAYLIST_ID = "PLlTrva6OzZKThknv28Xx9UTCMYkrL23JQ";
 
 if (!GROQ_API_KEY) {
   console.warn('GROQ_API_KEY is not set in .env. Explanation, pseudocode, and code endpoints will return an error until you add it.');
@@ -104,17 +103,17 @@ function getPayload(req) {
   };
 }
 
-// Extract problem number from title or slug
-function extractProblemNumber(title, slug) {
-  // Try to find number in title first (e.g., "1. Two Sum" or "Two Sum - LeetCode 1")
-  const titleMatch = title ? title.match(/\b(\d{1,4})\b/) : null;
-  if (titleMatch) return titleMatch[1];
+// Format search query from problem title
+function formatSearchQuery(title, slug) {
+  // Remove LeetCode problem number pattern (e.g., "1. " or "LeetCode 1")
+  let query = (title || slug || '')
+    .replace(/^\d+\.\s*/, '') // Remove "1. " at start
+    .replace(/\s*-\s*LeetCode.*$/, '') // Remove " - LeetCode" suffix
+    .replace(/\s*LeetCode\s*\d*$/, '') // Remove "LeetCode 1" suffix
+    .trim();
   
-  // Try to find number in slug (e.g., "two-sum" -> might not have number, but some slugs do)
-  const slugMatch = slug ? slug.match(/\b(\d{1,4})\b/) : null;
-  if (slugMatch) return slugMatch[1];
-  
-  return null;
+  // Add "leetcode" to ensure relevant results
+  return `${query} leetcode solution`;
 }
 
 // POST /api/explanation — body: { problemSlug?, title?, url?, problemDescription? }
@@ -154,8 +153,7 @@ app.post('/api/code', async (req, res) => {
   }
 });
 
-// YouTube API endpoint 
-// POST /api/youtube
+// YouTube API endpoint using search
 app.post('/api/youtube', async (req, res) => {
   try {
     if (!YOUTUBE_API_KEY) {
@@ -164,47 +162,24 @@ app.post('/api/youtube', async (req, res) => {
 
     const { title, problemSlug } = getPayload(req);
     
-    // Extract problem number
-    const problemNumber = extractProblemNumber(title, problemSlug);
+    // Format search query
+    const searchQuery = formatSearchQuery(title, problemSlug);
     
-    if (!problemNumber) {
-      // If no number found, fall back to first video
-      const fallbackUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=1&playlistId=${PLAYLIST_ID}&key=${YOUTUBE_API_KEY}`;
-      const fallbackRes = await fetch(fallbackUrl);
-      const fallbackData = await fallbackRes.json();
-      const fallbackVideoId = fallbackData.items?.[0]?.snippet?.resourceId?.videoId || null;
-      return res.json({ success: true, data: { videoId: fallbackVideoId } });
+    if (!searchQuery) {
+      return res.json({ success: true, data: { videoId: null } });
     }
 
-    // Fetch playlist items
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${PLAYLIST_ID}&key=${YOUTUBE_API_KEY}`;
-    const ytRes = await fetch(url);
+    // Search YouTube
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(searchQuery)}&type=video&key=${YOUTUBE_API_KEY}`;
+    
+    const ytRes = await fetch(searchUrl);
     const ytData = await ytRes.json();
 
-    const items = ytData.items || [];
-    let bestVideoId = null;
-
-    // Search for video containing the problem number
-    for (const item of items) {
-      const videoTitle = item.snippet?.title || '';
-      // Look for patterns like "1. Two Sum", "LeetCode 1", "#1", etc.
-      if (videoTitle.includes(` ${problemNumber}.`) || 
-          videoTitle.includes(`#${problemNumber}`) ||
-          videoTitle.includes(`LeetCode ${problemNumber}`) ||
-          videoTitle.match(new RegExp(`\\b${problemNumber}\\b`))) {
-        bestVideoId = item.snippet.resourceId.videoId;
-        break;
-      }
-    }
-
-    // If no match found, return first video as fallback
-    if (!bestVideoId && items.length > 0) {
-      bestVideoId = items[0].snippet.resourceId.videoId;
-    }
+    const videoId = ytData.items?.[0]?.id?.videoId || null;
 
     return res.json({
       success: true,
-      data: { videoId: bestVideoId }
+      data: { videoId }
     });
 
   } catch (e) {
