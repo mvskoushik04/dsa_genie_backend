@@ -87,9 +87,6 @@ async function groqComplete(systemPrompt, userPrompt) {
   return text;
 }
 
-
-// YouTube-related playlist/search helpers removed
-
 function parseProblemFromUrl(url) {
   if (!url || !url.includes('leetcode.com/problems/')) return null;
   const match = url.match(/leetcode\.com\/problems\/([^/?#]+)/);
@@ -105,6 +102,19 @@ function getPayload(req) {
     url: body.url ?? null,
     problemDescription: body.problemDescription ?? null,
   };
+}
+
+// Extract problem number from title or slug
+function extractProblemNumber(title, slug) {
+  // Try to find number in title first (e.g., "1. Two Sum" or "Two Sum - LeetCode 1")
+  const titleMatch = title ? title.match(/\b(\d{1,4})\b/) : null;
+  if (titleMatch) return titleMatch[1];
+  
+  // Try to find number in slug (e.g., "two-sum" -> might not have number, but some slugs do)
+  const slugMatch = slug ? slug.match(/\b(\d{1,4})\b/) : null;
+  if (slugMatch) return slugMatch[1];
+  
+  return null;
 }
 
 // POST /api/explanation — body: { problemSlug?, title?, url?, problemDescription? }
@@ -153,25 +163,41 @@ app.post('/api/youtube', async (req, res) => {
     }
 
     const { title, problemSlug } = getPayload(req);
-    const query = (title || problemSlug || '').toLowerCase();
+    
+    // Extract problem number
+    const problemNumber = extractProblemNumber(title, problemSlug);
+    
+    if (!problemNumber) {
+      // If no number found, fall back to first video
+      const fallbackUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=1&playlistId=${PLAYLIST_ID}&key=${YOUTUBE_API_KEY}`;
+      const fallbackRes = await fetch(fallbackUrl);
+      const fallbackData = await fallbackRes.json();
+      const fallbackVideoId = fallbackData.items?.[0]?.snippet?.resourceId?.videoId || null;
+      return res.json({ success: true, data: { videoId: fallbackVideoId } });
+    }
 
+    // Fetch playlist items
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${PLAYLIST_ID}&key=${YOUTUBE_API_KEY}`;
-
     const ytRes = await fetch(url);
     const ytData = await ytRes.json();
 
     const items = ytData.items || [];
-
     let bestVideoId = null;
 
+    // Search for video containing the problem number
     for (const item of items) {
-      const videoTitle = item.snippet?.title?.toLowerCase() || '';
-      if (videoTitle.includes(query)) {
+      const videoTitle = item.snippet?.title || '';
+      // Look for patterns like "1. Two Sum", "LeetCode 1", "#1", etc.
+      if (videoTitle.includes(` ${problemNumber}.`) || 
+          videoTitle.includes(`#${problemNumber}`) ||
+          videoTitle.includes(`LeetCode ${problemNumber}`) ||
+          videoTitle.match(new RegExp(`\\b${problemNumber}\\b`))) {
         bestVideoId = item.snippet.resourceId.videoId;
         break;
       }
     }
 
+    // If no match found, return first video as fallback
     if (!bestVideoId && items.length > 0) {
       bestVideoId = items[0].snippet.resourceId.videoId;
     }
