@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const express = require('express');
 const cors = require('cors');
 const Groq = require('groq-sdk');
@@ -7,6 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const PLAYLIST_ID = "PLlTrva6OzZKThknv28Xx9UTCMYkrL23JQ";
 
 if (!GROQ_API_KEY) {
   console.warn('GROQ_API_KEY is not set in .env. Explanation, pseudocode, and code endpoints will return an error until you add it.');
@@ -29,11 +32,11 @@ app.use(express.json());
 
 const EXPLANATION_SYSTEM = `You are a concise DSA tutor. Give only what is needed: no intros, no filler, no "in conclusion".
 Output format:
-- 1–2 sentences: what the problem asks.
+- Explain how the hints can be turned into a working solution, step by step.
 - Key insight (one line).
 - Steps (short bullet points).
 - Time/space complexity (one line each).
-Use plain text. No markdown headers. Keep under 150 words.`;
+Use plain text. No markdown headers. Keep under 200 words.`;
 
 function buildExplanationUser(problemTitle, problemSlug, problemDescription) {
   const desc = problemDescription && problemDescription.trim()
@@ -141,7 +144,47 @@ app.post('/api/code', async (req, res) => {
   }
 });
 
-// YouTube API endpoint removed
+// YouTube API endpoint 
+// POST /api/youtube
+app.post('/api/youtube', async (req, res) => {
+  try {
+    if (!YOUTUBE_API_KEY) {
+      return res.status(500).json({ success: false, error: 'YOUTUBE_API_KEY not set' });
+    }
+
+    const { title, problemSlug } = getPayload(req);
+    const query = (title || problemSlug || '').toLowerCase();
+
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${PLAYLIST_ID}&key=${YOUTUBE_API_KEY}`;
+
+    const ytRes = await fetch(url);
+    const ytData = await ytRes.json();
+
+    const items = ytData.items || [];
+
+    let bestVideoId = null;
+
+    for (const item of items) {
+      const videoTitle = item.snippet?.title?.toLowerCase() || '';
+      if (videoTitle.includes(query)) {
+        bestVideoId = item.snippet.resourceId.videoId;
+        break;
+      }
+    }
+
+    if (!bestVideoId && items.length > 0) {
+      bestVideoId = items[0].snippet.resourceId.videoId;
+    }
+
+    return res.json({
+      success: true,
+      data: { videoId: bestVideoId }
+    });
+
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
